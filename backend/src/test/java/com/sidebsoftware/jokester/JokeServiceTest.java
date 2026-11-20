@@ -8,9 +8,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
+import org.springframework.ai.chat.metadata.FinishReasonCategory;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 
 class JokeServiceTest {
 
@@ -31,7 +37,16 @@ class JokeServiceTest {
     }
 
     private void modelReplies(String content) {
-        when(chatClient.prompt().user("Tell me a joke.").call().content()).thenReturn(content);
+        modelReplies(content, "end_turn", FinishReasonCategory.COMPLETED);
+    }
+
+    private void modelReplies(String content, String finishReason, FinishReasonCategory category) {
+        ChatGenerationMetadata metadata = ChatGenerationMetadata.builder()
+                .finishReason(finishReason)
+                .finishReasonCategory(category)
+                .build();
+        ChatResponse response = new ChatResponse(List.of(new Generation(new AssistantMessage(content), metadata)));
+        when(chatClient.prompt().user("Tell me a joke.").call().chatResponse()).thenReturn(response);
     }
 
     @Test
@@ -71,15 +86,41 @@ class JokeServiceTest {
     }
 
     @Test
-    void nullResponseThrows() {
+    void nullContentThrows() {
         modelReplies(null);
+        assertThrows(JokeGenerationException.class, service::tellJoke);
+    }
+
+    @Test
+    void nullChatResponseThrows() {
+        when(chatClient.prompt().user("Tell me a joke.").call().chatResponse()).thenReturn(null);
+        assertThrows(JokeGenerationException.class, service::tellJoke);
+    }
+
+    @Test
+    void keepsQuotesInDialogueJoke() {
+        String joke = "\"Doctor, I feel like a deck of cards.\" \"Sit down, I'll deal with you later.\"";
+        modelReplies(joke);
+        assertThat(service.tellJoke()).isEqualTo(joke);
+    }
+
+    @Test
+    void keepsCurlyQuotesInDialogueJoke() {
+        String joke = "\u201CDoctor, I feel like a deck of cards.\u201D \u201CSit down, I'll deal with you later.\u201D";
+        modelReplies(joke);
+        assertThat(service.tellJoke()).isEqualTo(joke);
+    }
+
+    @Test
+    void truncatedReplyThrows() {
+        modelReplies("Why did the chicken cross the", "max_tokens", FinishReasonCategory.TRUNCATED);
         assertThrows(JokeGenerationException.class, service::tellJoke);
     }
 
     @Test
     void modelFailureIsWrapped() {
         RuntimeException boom = new RuntimeException("API down");
-        when(chatClient.prompt().user("Tell me a joke.").call().content()).thenThrow(boom);
+        when(chatClient.prompt().user("Tell me a joke.").call().chatResponse()).thenThrow(boom);
         JokeGenerationException ex = assertThrows(JokeGenerationException.class, service::tellJoke);
         assertThat(ex).hasCause(boom);
     }
