@@ -17,7 +17,7 @@ A web page with one button. Each click asks the backend for a joke; the backend 
 - Layout: approach 1.
 
 ## My calls (correct any of these)
-- Java 21, Spring Boot 3.x, Maven; current Spring AI release with the Anthropic starter.
+- Java 21, Spring Boot 4.2.0, Maven; Spring AI 2.1.0 with the Anthropic starter. (Was "Boot 3.x"; corrected at planning time: Spring AI 2.1.0, the current release, is built on Boot 4.2.0.)
 - Model: Claude Haiku 5.5 (`claude-haiku-5-5`): fast and cheap, fine for jokes.
 - API key from the `ANTHROPIC_API_KEY` env var; never committed.
 - Frontend: React + TypeScript, Vite.
