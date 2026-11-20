@@ -8,7 +8,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.function.IntUnaryOperator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -27,13 +30,22 @@ class JokeServiceTest {
     private ChatClient chatClient;
     private JokeService service;
 
+    /** User prompt the service sends when the topic picker returns index 0. */
+    private static String firstTopicPrompt() {
+        return promptFor(0);
+    }
+
+    private static String promptFor(int index) {
+        return "Tell me a joke about " + JokeService.TOPICS.get(index) + ".";
+    }
+
     @BeforeEach
     void setUp() {
         chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
         builder = mock(ChatClient.Builder.class);
         when(builder.defaultSystem(anyString())).thenReturn(builder);
         when(builder.build()).thenReturn(chatClient);
-        service = new JokeService(builder);
+        service = new JokeService(builder, size -> 0);
     }
 
     private void modelReplies(String content) {
@@ -45,8 +57,18 @@ class JokeServiceTest {
                 .finishReason(finishReason)
                 .finishReasonCategory(category)
                 .build();
-        ChatResponse response = new ChatResponse(List.of(new Generation(new AssistantMessage(content), metadata)));
-        when(chatClient.prompt().user("Tell me a joke.").call().chatResponse()).thenReturn(response);
+        when(chatClient.prompt().user(firstTopicPrompt()).call().chatResponse()).thenReturn(response(content, metadata));
+    }
+
+    private static ChatResponse response(String content, ChatGenerationMetadata metadata) {
+        return new ChatResponse(List.of(new Generation(new AssistantMessage(content), metadata)));
+    }
+
+    private static ChatResponse completed(String content) {
+        return response(content, ChatGenerationMetadata.builder()
+                .finishReason("end_turn")
+                .finishReasonCategory(FinishReasonCategory.COMPLETED)
+                .build());
     }
 
     @Test
@@ -93,7 +115,7 @@ class JokeServiceTest {
 
     @Test
     void nullChatResponseThrows() {
-        when(chatClient.prompt().user("Tell me a joke.").call().chatResponse()).thenReturn(null);
+        when(chatClient.prompt().user(firstTopicPrompt()).call().chatResponse()).thenReturn(null);
         assertThrows(JokeGenerationException.class, service::tellJoke);
     }
 
@@ -120,9 +142,40 @@ class JokeServiceTest {
     @Test
     void modelFailureIsWrapped() {
         RuntimeException boom = new RuntimeException("API down");
-        when(chatClient.prompt().user("Tell me a joke.").call().chatResponse()).thenThrow(boom);
+        when(chatClient.prompt().user(firstTopicPrompt()).call().chatResponse()).thenThrow(boom);
         JokeGenerationException ex = assertThrows(JokeGenerationException.class, service::tellJoke);
         assertThat(ex).hasCause(boom);
+    }
+
+    @Test
+    void asksForAJokeAboutThePickedTopic() {
+        service = new JokeService(builder, size -> 3);
+        when(chatClient.prompt().user(promptFor(3)).call().chatResponse()).thenReturn(completed("A topical joke."));
+        assertThat(service.tellJoke()).isEqualTo("A topical joke.");
+    }
+
+    @Test
+    void picksANewTopicOnEveryCall() {
+        List<Integer> picks = new ArrayList<>(List.of(1, 2));
+        List<Integer> sizesSeen = new ArrayList<>();
+        IntUnaryOperator picker = size -> {
+            sizesSeen.add(size);
+            return picks.remove(0);
+        };
+        service = new JokeService(builder, picker);
+        when(chatClient.prompt().user(promptFor(1)).call().chatResponse()).thenReturn(completed("Joke one."));
+        when(chatClient.prompt().user(promptFor(2)).call().chatResponse()).thenReturn(completed("Joke two."));
+
+        assertThat(service.tellJoke()).isEqualTo("Joke one.");
+        assertThat(service.tellJoke()).isEqualTo("Joke two.");
+        assertThat(sizesSeen).containsExactly(JokeService.TOPICS.size(), JokeService.TOPICS.size());
+    }
+
+    @Test
+    void topicsAreDistinctAndNonBlank() {
+        assertThat(JokeService.TOPICS).hasSizeGreaterThanOrEqualTo(25);
+        assertThat(JokeService.TOPICS).allSatisfy(topic -> assertThat(topic).isNotBlank());
+        assertThat(new HashSet<>(JokeService.TOPICS)).hasSameSizeAs(JokeService.TOPICS);
     }
 
     @Test

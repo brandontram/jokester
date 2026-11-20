@@ -1,9 +1,13 @@
 package com.sidebsoftware.jokester;
 
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.IntUnaryOperator;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.metadata.FinishReasonCategory;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Asks the configured chat model for a fresh joke. */
@@ -12,12 +16,29 @@ public class JokeService {
 
     static final String SYSTEM_PROMPT = "You are a comedian. Reply with exactly one short, clean, "
             + "family-friendly joke and nothing else: no preamble, no explanation, no surrounding quotation marks.";
-    static final String USER_PROMPT = "Tell me a joke.";
+
+    /**
+     * A random topic per request gives variety: the Anthropic API ignores temperature,
+     * so an identical prompt tends to produce the identical joke.
+     */
+    static final List<String> TOPICS = List.of(
+            "cats", "dogs", "coffee", "space", "the office", "cooking", "the weather", "computers",
+            "dinosaurs", "the ocean", "music", "sports", "school", "vegetables", "pirates", "robots",
+            "camping", "the gym", "birds", "trains", "books", "math", "doctors", "the moon",
+            "pizza", "farm animals", "socks", "vacations", "bakeries", "ghosts");
 
     private final ChatClient chatClient;
+    private final IntUnaryOperator topicPicker;
 
+    @Autowired
     public JokeService(ChatClient.Builder builder) {
+        this(builder, size -> ThreadLocalRandom.current().nextInt(size));
+    }
+
+    /** @param topicPicker given the number of topics, returns the index of the one to use */
+    JokeService(ChatClient.Builder builder, IntUnaryOperator topicPicker) {
         this.chatClient = builder.defaultSystem(SYSTEM_PROMPT).build();
+        this.topicPicker = topicPicker;
     }
 
     /**
@@ -27,7 +48,8 @@ public class JokeService {
     public String tellJoke() {
         ChatResponse response;
         try {
-            response = chatClient.prompt().user(USER_PROMPT).call().chatResponse();
+            String topic = TOPICS.get(topicPicker.applyAsInt(TOPICS.size()));
+            response = chatClient.prompt().user("Tell me a joke about " + topic + ".").call().chatResponse();
         } catch (RuntimeException e) {
             throw new JokeGenerationException("Model call failed", e);
         }

@@ -22,7 +22,7 @@ A web page with one button. Each click asks the backend for a joke; the backend 
 - API key from the `ANTHROPIC_API_KEY` env var; never committed. Missing or invalid key → the app still starts; each request returns the 502 error and logs the cause.
 - Frontend: React + TypeScript, Vite.
 - API: `GET /api/joke` → `200 {"joke": "..."}`. On model failure → `502 {"error": "..."}`.
-- Prompt: a short, clean, family-friendly joke, returned as plain text only. Temperature raised (~1.0) so repeated clicks vary. (Dropped at build time: the current Anthropic API ignores temperature, so variety relies on the model's default sampling.)
+- Prompt: a short, clean, family-friendly joke, returned as plain text only. Temperature raised (~1.0) so repeated clicks vary. (Dropped at build time: the current Anthropic API ignores temperature, so variety relies on the model's default sampling.) Live check showed repeated jokes, so each request now picks a random topic from a fixed list of 30 and asks `Tell me a joke about <topic>.`; the topic isn't shown in the UI.
 - UI: button "Tell me a joke"; disabled with a "Thinking…" label while loading; joke shown below; friendly error message if the call fails.
 - Tests: a backend controller test with the AI client mocked; a frontend component test for loading/success/error states.
 
